@@ -1,15 +1,8 @@
-# Automata de un pedido de comida por delivery.
-# Adaptacion del generador del docente al diagrama del equipo.
-import math
-import sys
+# dfa_cli_compacto.py — versión reducida
+import sys, matplotlib.pyplot as plt, networkx as nx
+from matplotlib.patches import FancyArrowPatch
 
-import matplotlib.pyplot as plt
-import networkx as nx
-from matplotlib.patches import Circle, FancyArrowPatch
-from matplotlib.path import Path
-
-
-# === Definicion del automata: coincide con el dibujo, sin bucle d ===
+# === Definición del DFA ===
 states = {
     "Inicio", "Carrito", "Metodo_pago", "Tarjeta", "Efectivo",
     "Preparacion", "Se_envia", "Entregado", "Cancelado"
@@ -26,187 +19,50 @@ delta = {
     ("Efectivo", "a"): "Preparacion",
     ("Preparacion", "a"): "Se_envia",
     ("Preparacion", "b"): "Cancelado",
-    ("Se_envia", "a"): "Entregado",
+    ("Se_envia", "a"): "Entregado"
 }
+
 q0, F = "Inicio", {"Entregado", "Cancelado"}
 
-
-# === Simulacion ===
+# === Simulación ===
 def run(s):
     q, steps = q0, [q0]
-    for i, ch in enumerate(s):
-        if ch not in alphabet:
-            raise ValueError(
-                f"Simbolo '{ch}' fuera del alfabeto en posicion {i + 1}. "
-                "Utiliza solamente a, b y c."
-            )
-        if (q, ch) not in delta:
-            raise ValueError(
-                f"Sin transicion desde {q} con '{ch}' "
-                f"en posicion {i + 1}."
-            )
-        q = delta[(q, ch)]
-        steps.append(q)
-    return steps, q in F
+    for i,ch in enumerate(s):
+        if (q,ch) not in delta: raise ValueError(f"Sin transición desde {q} con '{ch}' en pos {i}")
+        q = delta[(q,ch)]; steps.append(q)
+    return steps, steps[-1] in F
 
+# === Grafo y layout ===
+G = nx.MultiDiGraph(); G.add_nodes_from(states)
+for (q,a),p in delta.items(): G.add_edge(q,p,key=a,label=a)
+pos = nx.spring_layout(G, seed=7)
 
-# === Grafo y posiciones fijas, similares al dibujo del equipo ===
-pos = {
-    "Inicio": (0.0, 4.0),
-    "Carrito": (3.3, 4.0),
-    "Metodo_pago": (6.6, 4.0),
-    "Tarjeta": (10.0, 5.0),
-    "Efectivo": (10.0, 3.0),
-    "Preparacion": (10.0, 0.5),
-    "Se_envia": (6.6, 0.5),
-    "Entregado": (3.3, 0.5),
-    "Cancelado": (0.0, 0.5),
-}
-labels = {
-    "Inicio": "Inicio del\npedido",
-    "Carrito": "Carrito",
-    "Metodo_pago": "Método\nde pago",
-    "Tarjeta": "Tarjeta",
-    "Efectivo": "Efectivo",
-    "Preparacion": "Preparación\ndel pedido",
-    "Se_envia": "Se envía",
-    "Entregado": "Pedido\nentregado",
-    "Cancelado": "Pedido\ncancelado",
-}
-G = nx.MultiDiGraph()
-G.add_nodes_from(pos)
-for (source, symbol), target in delta.items():
-    G.add_edge(source, target, key=symbol, label=symbol)
-
-RADIUS = 0.78
-
-
-def radius(state):
-    return RADIUS + 0.10 if state in F else RADIUS
-
-
-def draw_edge(ax, source, target, symbol):
-    x1, y1 = pos[source]
-    x2, y2 = pos[target]
-
-    # La flecha de Tarjeta pasa por la derecha de Efectivo.
-    if (source, target) == ("Tarjeta", "Preparacion"):
-        vertices = [
-            (x1 + radius(source), y1),
-            (13.0, 4.8), (13.0, 0.7),
-            (x2 + radius(target), y2),
-        ]
-        label_at = (12.55, 2.85)
-    # La cancelacion desde Preparacion pasa debajo de los otros estados.
-    elif (source, target) == ("Preparacion", "Cancelado"):
-        vertices = [
-            (x1, y1 - radius(source)),
-            (8.5, -2.5), (1.5, -2.5),
-            (x2, y2 - radius(target)),
-        ]
-        label_at = (5.0, -2.0)
-    else:
-        dx, dy = x2 - x1, y2 - y1
-        length = math.hypot(dx, dy)
-        ux, uy = dx / length, dy / length
-        start = (x1 + radius(source) * ux, y1 + radius(source) * uy)
-        end = (x2 - radius(target) * ux, y2 - radius(target) * uy)
-        ax.add_patch(FancyArrowPatch(
-            start, end, arrowstyle="-|>", mutation_scale=19,
-            linewidth=1.8, color="#334155", shrinkA=2, shrinkB=2,
-            zorder=1,
-        ))
-        label_at = (
-            (start[0] + end[0]) / 2 - 0.20 * uy,
-            (start[1] + end[1]) / 2 + 0.20 * ux,
-        )
-        vertices = None
-
-    if vertices is not None:
-        path = Path(vertices, [Path.MOVETO] + [Path.CURVE4] * 3)
-        ax.add_patch(FancyArrowPatch(
-            path=path, arrowstyle="-|>", mutation_scale=19,
-            linewidth=1.8, color="#334155", zorder=1,
-        ))
-    ax.text(
-        *label_at, symbol, ha="center", va="center",
-        fontsize=13, fontweight="bold", color="#1d4ed8",
-        bbox={"facecolor": "white", "edgecolor": "none", "pad": 2},
-        zorder=4,
-    )
-
+# === Dibujo por paso ===
+def _mid(p1,p2,o=0.10):
+    (x1,y1),(x2,y2)=p1,p2; mx,my=(x1+x2)/2,(y1+y2)/2; dx,dy=x2-x1,y2-y1; nx_,ny_=-dy,dx; L=(nx_**2+ny_**2)**0.5 or 1
+    return mx+o*nx_/L, my+o*ny_/L
 
 def draw_step(current, idx, sym=None):
-    fig = plt.figure("Autómata de delivery", figsize=(15, 8.8))
-    ax = fig.gca()
-    ax.clear()
+    plt.clf(); nodes=list(G.nodes())
+    nx.draw_networkx_nodes(G,pos,nodelist=nodes,node_size=[900 if n==current else 600 for n in nodes],linewidths=[3 if n in F else 1 for n in nodes],edgecolors="black")
+    nx.draw_networkx_labels(G,pos)
+    seen={}
+    for u,v,k,d in G.edges(keys=True,data=True):
+        if u==v:
+            x,y=pos[u]; plt.gca().add_patch(FancyArrowPatch((x,y),(x+1e-4,y+1e-4),connectionstyle="arc3,rad=0.45",arrowstyle='-|>',mutation_scale=18))
+            plt.text(x,y+0.18,d['label'],fontsize=11,ha='center'); continue
+        i=seen.get((u,v),0); seen[(u,v)]=i+1; rad=0.25 if i%2==0 else -0.25
+        nx.draw_networkx_edges(G,pos,edgelist=[(u,v)],connectionstyle=f"arc3,rad={rad}",arrows=True,arrowstyle='-|>',arrowsize=20)
+        lx,ly=_mid(pos[u],pos[v],0.10 if i%2==0 else -0.10); plt.text(lx,ly,d['label'],fontsize=11,ha='center',va='center')
+    plt.axis('off'); plt.title(f"Paso {idx}: {current}" + (f" | '{sym}'" if sym else "")); plt.pause(1.0)
 
-    for source, target, data in G.edges(data=True):
-        draw_edge(ax, source, target, data["label"])
-
-    for state, (x, y) in pos.items():
-        color = "#ffda88" if state == current else (
-            "#dcfce7" if state in F else "#e0f2fe"
-        )
-        border = "#15803d" if state in F else "#075985"
-        ax.add_patch(Circle(
-            (x, y), RADIUS, facecolor=color,
-            edgecolor=border, linewidth=2.5, zorder=2,
-        ))
-        if state in F:
-            ax.add_patch(Circle(
-                (x, y), radius(state), fill=False,
-                edgecolor=border, linewidth=2, zorder=2,
-            ))
-        ax.text(
-            x, y, labels[state], ha="center", va="center",
-            fontsize=11, color="#0f172a", zorder=3,
-        )
-
-    ax.annotate(
-        "", xy=(-RADIUS, 4.0), xytext=(-2.0, 4.0),
-        arrowprops={"arrowstyle": "-|>", "color": "#334155", "lw": 2},
-    )
-    ax.text(-1.55, 4.25, "Inicio", ha="center", fontsize=10)
-    suffix = f"  |  Símbolo: '{sym}'" if sym is not None else ""
-    ax.set_title(
-        f"Pedido de comida por delivery\nPaso {idx}: {labels[current].replace(chr(10), ' ')}{suffix}",
-        fontsize=16, pad=14,
-    )
-    ax.text(
-        5.4, -3.0,
-        "Amarillo: estado actual   ·   Doble círculo: estado final\n"
-        "Alfabeto: {a, b, c}   ·   Las transiciones no dibujadas se rechazan.",
-        ha="center", va="center", fontsize=11, color="#475569",
-    )
-    ax.set_xlim(-2.3, 13.2)
-    ax.set_ylim(-3.6, 6.3)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    fig.tight_layout()
-    fig.canvas.draw_idle()
-    return fig
-
-
-def main():
-    s = sys.argv[1] if len(sys.argv) > 1 else input("Cadena (a/b/c): ").strip()
+# === core/main ===
+if __name__=='__main__':
+    s = sys.argv[1] if len(sys.argv)>1 else input("Cadena (a/b): ").strip()
     try:
-        steps, ok = run(s)
-    except ValueError as error:
-        print("RECHAZA:", error)
-        return
-
-    print("ACEPTA" if ok else "RECHAZA", f"(estado final: {steps[-1]})")
-    print("Recorrido:", " -> ".join(steps))
-    plt.ion()
-    draw_step(steps[0], 0)
-    plt.pause(1.0)
-    for i, ch in enumerate(s, 1):
-        draw_step(steps[i], i, ch)
-        plt.pause(1.0)
-    plt.ioff()
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
+        steps, ok = run(s); print("ACEPTA" if ok else "RECHAZA", f"(estado final: {steps[-1]})")
+        plt.ion(); draw_step(steps[0],0)
+        for i,ch in enumerate(s,1): draw_step(steps[i],i,ch)
+        plt.ioff(); plt.show()
+    except Exception as e:
+        print("RECHAZA:", e)
